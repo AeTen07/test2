@@ -40,7 +40,7 @@ def render_search_form():
             car_grip = st.selectbox("🅿️車位選擇", ["不限", "需要", "不要"], key="car_grip")
 
         st.subheader("🛠️特殊要求（可輸入文字，如：一房二廳一衛）")
-        Special_Requests = st.text_area("特殊要求", placeholder="例：一房二廳一衛以上，低樓層")
+        Special_Requests = st.text_area("特殊要求", placeholder="請輸入")
 
         col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
         with col3:
