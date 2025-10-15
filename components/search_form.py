@@ -304,7 +304,6 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
         filters.update(parsed_req)
 
         # ===== 執行篩選 =====
-        from utils import filter_properties
         filtered_df = filter_properties(df, filters)
         st.session_state.filtered_df = filtered_df
         st.session_state.search_params = {
@@ -323,7 +322,7 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
         else:
             st.success(f"✅ 從 {len(df)} 筆資料中篩選出 {len(filtered_df)} 筆符合條件的房產")
         return True
-
+        
     except FileNotFoundError:
         st.error(f"❌ 找不到檔案: {file_path}")
     except Exception as e:
