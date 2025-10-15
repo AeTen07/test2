@@ -302,10 +302,12 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
 
         # 合併 Gemini 篩選條件
         # ✅ 只合併有實際值的 Gemini 篩選條件
+        # 主要變動：合併 Gemini 特殊要求時，只補充缺少欄位
         if isinstance(parsed_req, dict):
             for k, v in parsed_req.items():
-                if v not in [None, {}, ""]:
+                if v not in [None, {}, ""] and filters.get(k) in [None, "", {}]:
                     filters[k] = v
+
     
 
         # ===== 執行篩選 =====
