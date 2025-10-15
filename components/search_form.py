@@ -1,10 +1,10 @@
+# search_form.py
+
 import os
 import re
-import json
 import pandas as pd
 import streamlit as st
-import google.generativeai as genai
-from utils import get_city_options, filter_properties 
+from utils import get_city_options, filter_properties, parse_layout, parse_floor, normalize_special_value
 
 def render_search_form():
     """ 渲染搜尋表單並處理提交邏輯 """
@@ -54,103 +54,9 @@ def render_search_form():
             )
     return None
 
-
-def _extract_json_text(text: str):
-    """嘗試從回傳文字抓出第一個 JSON 物件或陣列字串"""
-    if not text:
-        return None
-    # 只抓最外層 {} 或 []
-    # 注意這個簡單版本不支援完全任意深度嵌套，但通常 Gemini 回傳沒問題
-    start = text.find('{')
-    end = text.rfind('}')
-    if start != -1 and end != -1 and end > start:
-        return text[start:end+1]
-    # 嘗試陣列形式
-    start = text.find('[')
-    end = text.rfind(']')
-    if start != -1 and end != -1 and end > start:
-        return text[start:end+1]
-    return None
-
-
-
-def _normalize_value(val):
-    """把單一欄位的解析結果轉成整數或區間 dict"""
-    if val is None:
-        return None
-    # 若已是數字型態
-    if isinstance(val, (int, float)):
-        return int(val)
-    s = str(val).strip()
-    if s == '':
-        return None
-    # 常見的 range 表示法 "1-3"
-    m = re.match(r'^\s*(\d+)\s*[-~–]\s*(\d+)\s*$', s)
-    if m:
-        return {"min": int(m.group(1)), "max": int(m.group(2))}
-    # "3以上" 或 ">=3" 或 "3+" -> min
-    m = re.search(r'(\d+)\s*(以上|\+|>=)', s)
-    if m:
-        return {"min": int(m.group(1))}
-    # "3以下" 或 "<=3" -> max
-    m = re.search(r'(以下|<=)\s*(\d+)', s)
-    if m:
-        return {"max": int(m.group(2))}
-    # 單一數字
-    m = re.match(r'^\s*(\d+)\s*$', s)
-    if m:
-        return int(m.group(1))
-    # 標籤式：低樓層 / 高樓層
-    if '低' in s:
-        return {"min": 1, "max": 5}
-    if '高' in s:
-        return {"min": 6}
-    # 若是文字描述（ex: "2房"、"三房"），嘗試抽數字
-    m = re.search(r'(\d+)', s)
-    if m:
-        return int(m.group(1))
-    # 無法解析就回 None
-    return None
-
-def _normalize_parsed_req(parsed: dict):
-    """把 Gemini 回傳的欄位（可能是中文或英文）轉成我們要的 keys"""
-    if not parsed or not isinstance(parsed, dict):
-        return {}
-
-    out = {}
-    # 支援中/英欄位名
-    keymap = {
-        "房間數": "rooms", "rooms": "rooms", "房間": "rooms", "臥室": "rooms",
-        "廳數": "living_rooms", "廳": "living_rooms", "living_rooms": "living_rooms",
-        "衛數": "bathrooms", "衛": "bathrooms", "bathrooms": "bathrooms",
-        #"樓層": "floor", "floor": "floor"
-    }
-
-    for k, v in parsed.items():
-        if not k:
-            continue
-        k_strip = k.strip()
-        target = keymap.get(k_strip)
-        if not target:
-            # 嘗試英文小寫
-            target = keymap.get(k_strip.lower())
-        if not target:
-            continue
-        normalized = _normalize_value(v)
-        if normalized is not None:
-            out[target] = normalized
-
-    return out
-
 def handle_search_submit(selected_label, options, housetype_change, budget_min, budget_max,
                          age_min, age_max, area_min, area_max, car_grip, Special_Requests):
-    """完整房產搜尋提交處理"""
-    import os
-    import pandas as pd
-    import streamlit as st
-    from utils import filter_properties, parse_layout, parse_floor, normalize_special_value
-    import json
-
+    """處理搜尋表單提交（CSV 解析 + Gemini 特殊要求 + 篩選）"""
     # 驗證基本輸入
     valid_input = True
     if budget_min > budget_max and budget_max > 0:
@@ -178,7 +84,6 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
         df['rooms'] = parsed_layout.apply(lambda x: x['rooms'])
         df['living_rooms'] = parsed_layout.apply(lambda x: x['living_rooms'])
         df['bathrooms'] = parsed_layout.apply(lambda x: x['bathrooms'])
-
         df['floor'] = df['樓層'].apply(lambda x: parse_floor(x)['min'])
         df['floor_max'] = df['樓層'].apply(lambda x: parse_floor(x)['max'])
 
@@ -194,7 +99,7 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
             'car_grip': car_grip
         }
 
-        # ===== Gemini 特殊要求解析（只補充格局與樓層） =====
+        # ===== Gemini 特殊要求解析（只補充格局/樓層）=====
         parsed_req = {}
         gemini_key = st.session_state.get("GEMINI_KEY", "")
         if Special_Requests.strip() and gemini_key:
@@ -203,34 +108,45 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
                 genai.configure(api_key=gemini_key)
                 model = genai.GenerativeModel("gemini-2.0-flash")
                 prompt = f"""
-                請將下列房產需求解析為**純 JSON**（不要任何說明文字，只回傳 JSON）：
+                請將下列房產需求解析為**純 JSON**：
                 \"\"\"{Special_Requests}\"\"\"
-                JSON 欄位請包含（若無則省略）：房間數、廳數、衛數、樓層。
-                注意：請使用英文冒號和逗號，並確保回傳能被機器解析（valid JSON）。
+                JSON 欄位請包含：房間數、廳數、衛數、樓層
                 """
                 response = model.generate_content(prompt)
                 resp_text = (response.text or "").strip()
                 with st.expander("🔎 Gemini 回傳（debug）", expanded=False):
                     st.code(resp_text)
 
-                # 嘗試解析 JSON
+                import json
                 try:
                     parsed_obj = json.loads(resp_text)
                 except Exception:
-                    # 嘗試抓出第一個 JSON
+                    # 嘗試抽第一個 {} 的 JSON
                     start = resp_text.find('{')
                     end = resp_text.rfind('}')
-                    parsed_obj = json.loads(resp_text[start:end+1].replace('：', ':').replace('，', ',')) if start != -1 else {}
+                    parsed_obj = json.loads(resp_text[start:end+1].replace('：', ':').replace('，', ','))
 
-                # 只保留格局與樓層欄位
-                gemini_cols = ['rooms', 'living_rooms', 'bathrooms', 'floor']
+                # 標準化 key
+                keymap = {
+                    "房間數": "rooms", "rooms": "rooms",
+                    "廳數": "living_rooms", "廳": "living_rooms",
+                    "衛數": "bathrooms", "衛": "bathrooms",
+                    "樓層": "floor", "floor": "floor"
+                }
                 for k, v in parsed_obj.items():
-                    if k in gemini_cols:
-                        filters[k] = normalize_special_value(v)
+                    target = keymap.get(k.strip()) or keymap.get(str(k).strip().lower())
+                    if target:
+                        normed = normalize_special_value(v)
+                        if normed is not None:
+                            parsed_req[target] = normed
 
             except Exception as e:
                 st.error(f"❌ Gemini 解析特殊要求失敗: {e}")
                 parsed_req = {}
+
+        # 只將 Gemini 結果合併格局與樓層
+        for k, v in parsed_req.items():
+            filters[k] = v
 
         # ===== 執行篩選 =====
         filtered_df = filter_properties(df, filters)
