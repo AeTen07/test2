@@ -301,7 +301,12 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
                 parsed_req = {}
 
         # 合併 Gemini 篩選條件
-        filters.update(parsed_req)
+        # ✅ 只合併有實際值的 Gemini 篩選條件
+        if isinstance(parsed_req, dict):
+            for k, v in parsed_req.items():
+                if v not in [None, {}, ""]:
+                    filters[k] = v
+    
 
         # ===== 執行篩選 =====
         filtered_df = filter_properties(df, filters)
