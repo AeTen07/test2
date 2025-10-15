@@ -1,0 +1,6 @@
+"Taipei-city", "NewTaipei-city", "Keelung-city", "Yilan-county"
+"Hsinchu-city", "Hsinchu-county", "Taoyuan-city", "Miaoli-county"
+"Taichung-city", "Changhua-county", "Nantou-county", "Yunlin-county"
+"Chiayi-city", "Chiayi-county", "Tainan-city", "Kaohsiung-city"
+"Pingtung-county", "Penghu-county", "Taitung-county", "Hualien-county"
+"Kinmen-county", "Lienchiang-county"

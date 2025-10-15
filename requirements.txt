@@ -1,0 +1,12 @@
+streamlit
+requests
+folium
+google-generativeai
+python-dotenv
+streamlit-folium
+selenium
+beautifulsoup4
+pandas
+webdriver-manager
+hnswlib
+sentence-transformers>=2.2.2
