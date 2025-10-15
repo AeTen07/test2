@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import streamlit as st
 import google.generativeai as genai
-from utils import get_city_options, filter_properties
+from utils import get_city_options, filter_properties 
 
 def render_search_form():
     """ 渲染搜尋表單並處理提交邏輯 """
@@ -39,8 +39,8 @@ def render_search_form():
         with col3:
             car_grip = st.selectbox("🅿️車位選擇", ["不限", "需要", "不要"], key="car_grip")
 
-        st.subheader("🛠️特殊要求（可輸入文字，如：二房二廳一衛）")
-        Special_Requests = st.text_area("特殊要求", placeholder="請輸入")
+        st.subheader("🛠️特殊要求（可輸入文字，如：一房二廳一衛）")
+        Special_Requests = st.text_area("特殊要求", placeholder="例：一房二廳一衛以上，低樓層")
 
         col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
         with col3:
@@ -71,6 +71,7 @@ def _extract_json_text(text: str):
     if start != -1 and end != -1 and end > start:
         return text[start:end+1]
     return None
+
 
 
 def _normalize_value(val):
@@ -111,11 +112,11 @@ def _normalize_value(val):
     # 無法解析就回 None
     return None
 
-
 def _normalize_parsed_req(parsed: dict):
     """把 Gemini 回傳的欄位（可能是中文或英文）轉成我們要的 keys"""
     if not parsed or not isinstance(parsed, dict):
         return {}
+
     out = {}
     # 支援中/英欄位名
     keymap = {
@@ -140,7 +141,6 @@ def _normalize_parsed_req(parsed: dict):
             out[target] = normalized
 
     return out
-
 
 def handle_search_submit(selected_label, options, housetype_change, budget_min, budget_max,
                          age_min, age_max, area_min, area_max, car_grip, Special_Requests):
@@ -301,13 +301,10 @@ def handle_search_submit(selected_label, options, housetype_change, budget_min, 
                 parsed_req = {}
 
         # 合併 Gemini 篩選條件
-        # ✅ 只合併有實際值的 Gemini 篩選條件
-        # 主要變動：合併 Gemini 特殊要求時，只補充缺少欄位
-        for k, v in parsed_req.items():
-            if v not in [None, {}, ""] and filters.get(k) in [None, "", {}]:
-                filters[k] = v
+        filters.update(parsed_req)
 
         # ===== 執行篩選 =====
+        from utils import filter_properties
         filtered_df = filter_properties(df, filters)
         st.session_state.filtered_df = filtered_df
         st.session_state.search_params = {
